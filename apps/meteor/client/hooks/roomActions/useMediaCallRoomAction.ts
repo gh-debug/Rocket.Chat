@@ -65,7 +65,6 @@ export const useMediaCallRoomAction = () => {
 			return undefined;
 		}
 
-		// DMV-62: don't offer the call when SIP routing is required but the peer has no extension.
 		if (routeInternalCallsViaSip && !peerHasExtension) {
 			return undefined;
 		}
