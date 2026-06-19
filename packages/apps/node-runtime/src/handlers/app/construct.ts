@@ -70,7 +70,7 @@ function wrapAppCode(code: string): (require: (module: string) => unknown) => Pr
 
         const result = (async (exports,module,require,console,globalThis) => {
             ${code};
-        })(exports,module,require,Buffer,_console,undefined,undefined);
+        })(exports,module,require,_console,undefined,undefined);
 
         return result.then(() => module.exports);`,
 	) as (require: (module: string) => unknown) => Promise<Record<string, unknown>>;
