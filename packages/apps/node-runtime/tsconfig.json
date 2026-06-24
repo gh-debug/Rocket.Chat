@@ -9,6 +9,14 @@
 		"moduleResolution": "nodenext",
 		"target": "es2023",
 		"declaration": false,
+		"baseUrl": ".",
+		"paths": {
+			// Resolve sibling-package imports against the built output directly, mirroring the
+			// deno-runtime import map ("@rocket.chat/apps/": "../"). Without this, tsc relies on the
+			// `node_modules/@rocket.chat/apps` workspace symlink, which is not reliably resolvable
+			// while @rocket.chat/apps is building itself in CI.
+			"@rocket.chat/apps/*": ["../*"],
+		},
 	},
 	"include": ["./src/**/*"]
 }
