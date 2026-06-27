@@ -18,9 +18,12 @@ type RoomListRowProps = {
 		isAnonymous: boolean;
 	};
 	item: SubscriptionWithRoom;
+	/** The sidebar group this row belongs to (translation key for system groups, category id for custom ones). */
+	groupKey?: string;
+	isCustomCategory?: boolean;
 };
 
-const RoomListRow = ({ data, item }: RoomListRowProps) => {
+const RoomListRow = ({ data, item, groupKey, isCustomCategory }: RoomListRowProps) => {
 	const { extended, t, SidebarItemTemplate, AvatarTemplate, openedRoom, sidebarViewMode } = data;
 
 	const acceptCall = useVideoConfAcceptCall();
@@ -47,6 +50,8 @@ const RoomListRow = ({ data, item }: RoomListRowProps) => {
 			SidebarItemTemplate={SidebarItemTemplate}
 			AvatarTemplate={AvatarTemplate}
 			videoConfActions={videoConfActions}
+			groupKey={groupKey}
+			isCustomCategory={isCustomCategory}
 		/>
 	);
 };
