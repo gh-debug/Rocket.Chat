@@ -2,206 +2,265 @@
 
 ## Status
 
-Draft
+Draft. This rewrite **supersedes** the original version (added in `981f479c40`); its
+premises no longer hold (see [What changed](#what-changed-since-the-original-proposal)).
+All numerics below were re-derived from the current tree.
 
 ## Problem
 
-The apps subprocess runtime exists today in two near-duplicate copies:
+The apps subprocess runtime exists today as two near-duplicate trees:
 
 - `packages/apps/deno-runtime/` — the Deno implementation (files at root)
-- `packages/apps/node-runtime/` — the Node implementation (files under `src/`)
+- `packages/apps/node-runtime/src/` — the Node implementation
 
-A normalized diff of all 70 non-test source files (stripping import-path extensions,
-`import type` vs `import`, and prettier/tabs-vs-spaces formatting) shows the two trees
-are **~90% byte-identical logic**. The four largest apparent diffs (`BlockBuilder.ts`,
-`lib/accessors/mod.ts`, `lib/ast/operations.ts`, `handlers/uikit/handler.ts`) each reduce
-to **exactly 2 differing tokens** once sorted and whitespace-stripped — those tokens being
-the relocated `require(...)` calls.
+Node is the **canonical** runtime and will replace Deno at a future major release. Until
+then both must ship and stay in lockstep, so every accessor change, handler addition, or bug
+fix has to be applied twice by hand.
 
-Maintaining two copies means every bug fix, accessor change, or handler addition must be
-applied twice and kept in sync by hand. The goal is a single **base runtime** that owns all
-shared logic, with each platform supplying a thin adapter for the genuinely
-platform-specific surface.
+After Deno's move to `node:*` compatibility and this branch's convergence work, the two trees
+now hold **57 non-test source files each, over an identical path set**, and differ in only
+**5 files**. The remaining per-file diffs are overwhelmingly toolchain idiom (import order,
+`import type` splitting, `?.`, line wrapping) that collapses automatically under a single
+lint/format/tsconfig.
 
-## The Platform Boundary
+So the thesis of the original proposal **flips**: the shared base is not a 90%-identical
+core to be carved out of a thicket of couplings — it is **almost the entire tree**, and the
+per-runtime adapter is **tiny (5 files + config)**. The base is essentially today's
+`node-runtime/src` minus those 5 adapter files.
 
-Every genuine divergence between the two runtimes reduces to **one of 11 capabilities**.
-The base runtime depends only on a `RuntimePlatform` interface; each runtime supplies a
-concrete adapter.
+## What changed since the original proposal
 
-```ts
-interface RuntimePlatform {
-  // ── module resolution (the largest coupling: 19 files) ──
-  require(specifier: string): unknown;          // apps-engine runtime classes + sandboxed app require
-  prepareEnvironment(): void;                    // deno: patch Socket.prototype._final; node: no-op
+The original doc modeled the boundary as an **11-capability `RuntimePlatform` interface** with
+a `setPlatform()` singleton injecting `require`/transport/`pid`/`argv`/`exit`/observer/
+`readFile`/`readStdin`/etc., and claimed **19 `require`-coupled files**. That model is obsolete:
 
-  // ── transport ──
-  readStdin(): AsyncIterable<Uint8Array>;        // deno: Deno.stdin.readable    | node: process.stdin
-  writeStdout(bytes: Uint8Array): Promise<void>; // deno: writeAll(Deno.stdout)  | node: process.stdout.write
-  writeStderr(bytes: Uint8Array): Promise<void>; // deno: writeAll(Deno.stderr)  | node: process.stderr.write
+- **Deno dropped its native APIs** (`Deno.*`, `@std/cli`) and runs on `node:*` compat
+  (`node:process`, `node:net`, `node:module`, `node:fs/promises`, `node:events`, `node:util`,
+  `node:buffer`). Most of the 11 capabilities collapsed because both runtimes now call the
+  same `node:` APIs. Concretely, the message loop reads stdin **identically** in both
+  (`for await (const message of decoder.decodeStream(process.stdin))` —
+  `deno-runtime/main.ts:101`, `node-runtime/src/main.ts:102`), so `readStdin`/`writeStderr`/
+  `pid`/`argv`/`exit` are no longer seams at all.
+- **The `require` coupling collapsed to one file.** Every explicit `require(...)` call now
+  lives only in `handlers/app/construct.ts` (Deno also imports the `lib/require.ts` shim it
+  feeds). Builders, extenders, modify/, handlers and accessors use plain static imports
+  resolved by the platform's module-resolution mechanism — which is why they are byte-identical
+  after idiom normalization.
 
-  // ── process lifecycle ──
-  pid: number;                                   // Deno.pid    | process.pid
-  argv: string[];                                // Deno.args   | process.argv
-  parseArgs(argv: string[]): ParsedArgs;         // @std/cli    | node:util
-  exit(code: number): never;                     // Deno.exit   | process.exit
-  registerErrorHandlers(report): void;           // addEventListener | process.on('uncaughtException')
+## The genuine seam: 5 files
 
-  // ── rpc response correlation ──
-  createResponseObserver(): ResponseObserver;    // EventTarget(+ErrorEvent/CustomEvent) | EventEmitter
+These are the only files with irreducible per-runtime differences. Everything else is base.
 
-  // ── file io ──
-  readFile(path: string): Promise<Uint8Array>;   // Deno.open+toArrayBuffer | node:fs/promises readFile
-}
-```
+### 1. Module resolution — `lib/require.ts` (Deno) ↔ `lib/loader-hook.ts` (Node)
 
-Everything else — the handler layer, accessor layer, builders, extenders, modify/, AST,
-room logic, codec, secureFields, logger — is logically identical and moves to the base
-unchanged (modulo import-path/idiom normalization that converges automatically under one
-toolchain).
+The mechanism that makes bare `@rocket.chat/apps[-engine]` specifiers resolve to compiled
+output.
 
-## Decisions Taken
+- **Deno** (`lib/require.ts`): `createRequire(import.meta.url)` plus `import.meta.resolve`,
+  stripping `apps-engine/src/` → `apps-engine/`. Paired with the `deno.jsonc` import map
+  (config, not code).
+- **Node** (`lib/loader-hook.ts`): `registerHooks({ resolve })` redirecting the
+  `@rocket.chat/apps` prefix to the package root. Imported for side effect at the top of
+  `main.ts`; nothing calls it.
 
-### `require` injection: init-time singleton (Option A)
+This capability **resists** the injection model and is *not* a runtime-injected function — see
+[Module resolution is not an injectable capability](#module-resolution-is-not-an-injectable-capability).
 
-The 19 `require`-coupled files are constructed deep in the tree (builders instantiated by
-`ModifyCreator`, etc.), so threading `platform` through every constructor would be
-invasive. Instead:
+### 2. stdout transport — `lib/transports/stdoutTransport.ts`
 
-- The base exposes `setPlatform(platform)`, called **once** in `main()` before any handler
-  runs.
-- `require`-coupled files read `platform.require` from a base-internal singleton.
+- **Deno**: `writeAll(Deno.stdout, message)` via `@std/io`.
+- **Node**: `process.stdout.write(message, cb)` wrapped in a Promise.
 
-This matches today's module-level `require` usage (Deno imports a shim; Node uses the global
-CJS `require`) and keeps churn to the shared files near zero. The alternative — constructor
-threading (pure DI) — was rejected because it touches every builder/extender/modify
-signature for no functional gain.
+This **must stay Deno-specific**: `process.stdout.write` is broken under Deno's node-compat
+stream handling (**denoland/deno#22871**, filed by Douglas). Do not converge it.
 
-### `construct.ts buildRequire`
+This seam is already cleanly abstracted: `lib/messenger.ts` defines a `Transport` interface,
+a `setTransport()` injector, and a `noopTransport` default. **That is the template the whole
+design generalizes** (see [Injection model](#injection-model)).
 
-The allow-lists (`ALLOWED_NATIVE_MODULES` / `ALLOWED_EXTERNAL_MODULES`) and the eval shell
-are base. Only the specifier-prefix policy (`npm:` / `node:` handling, Buffer injection) and
-`prepareEnvironment` differ → both fold into `platform`.
+### 3. `handlers/app/construct.ts`
 
-## Suggested Package Shape
+Builds the sandboxed `require` and `eval`s the app. Shared: the allow-lists
+(`ALLOWED_NATIVE_MODULES`/`ALLOWED_EXTERNAL_MODULES`), the `buildRequire` dispatch, and the
+eval-shell skeleton. Per-runtime:
+
+- **Deno**: imports `require` from `lib/require`; patches `Socket.prototype._final`
+  (`prepareEnvironment()`); injects `Buffer` (from `require('buffer')`) and shadows `Deno`
+  (→ `undefined`) into the eval shell —
+  `(async (exports,module,require,Buffer,console,globalThis,Deno) => …)`.
+- **Node**: uses global `require`; imports `App` directly and uses a `_ConstructedApp`
+  class trick for typing; eval shell is
+  `(async (exports,module,require,console,globalThis) => …)` (no `Buffer`/`Deno`).
+
+> An apps subprocess constructs **exactly one app**, so `construct.ts` runs **once per
+> process**. Placement of process-global side effects (e.g. the `Socket` patch) is a
+> readability choice, never an idempotency concern.
+
+### 4. `error-handlers.ts`
+
+- **Deno**: `addEventListener('unhandledrejection' | 'error', …)`.
+- **Node**: `process.on('uncaughtException', …)`.
+
+The **notification shape is identical** (converged on this branch). Only the registration
+mechanism differs. This file is adapter code that *calls* base `Messenger.sendNotification`;
+it is not injected into the base.
+
+### 5. `main.ts`
+
+- **Deno**: `import process from 'node:process'`; the `--subprocess` guard writes a plain string.
+- **Node**: `import './lib/loader-hook'` first; the guard wraps the message in `TextEncoder`;
+  `void main()`.
+
+The message loop and observer dispatch (both now `emit` via the `EventEmitter` observer) are
+**base**. Each adapter's `main.ts` is reduced to a thin bootstrap (see below).
+
+## File inventory
+
+- **57** non-test `.ts` files per runtime, identical path set.
+- **52** of them are **base** (move to `base-runtime/` unchanged modulo idiom normalization).
+- **5** are the seam files above; each runtime keeps its own variant.
+- ~30 of the 52 currently show a diff that is **pure toolchain idiom** (import order,
+  `import type`, `?.`, `as unknown as`, `@ts-expect-error` removal, line wrapping). These
+  **auto-converge** under one shared eslint/prettier/tsconfig at extraction — they are **not
+  work** and must not be hand-converged.
+
+## Design
+
+### Injection model
+
+Generalize the existing `Transport` / `setTransport()` / `noopTransport` pattern from
+`messenger.ts`. Use **independent module-level injectors**, each with a sane no-op default —
+**not** a single `setPlatform(platform)` god-object (that is the obsolete 11-capability shape
+in miniature, forcing unrelated capabilities into one type and one injection point).
+
+The surface divides cleanly in two:
+
+**(a) Injected into the base** — values the base *reads* at runtime, each with a setter:
+
+| Injector | Read by | Deno | Node |
+|---|---|---|---|
+| `setTransport(transport)` *(exists)* | `messenger.ts` | `stdoutTransport` (`@std/io`) | `stdoutTransport` (`process.stdout`) |
+| `setSandboxRequire(require)` | `construct.ts` | `lib/require` shim | global `require` |
+| `setSandboxGlobals(globals)` | `construct.ts` | `{ Buffer, Deno: undefined }` | `{}` |
+
+`setSandboxGlobals` folds construct's eval-shell argument difference into **data**: the base
+eval shell binds the common names (`exports, module, require, console, globalThis`) and spreads
+the injected extras, so the shell skeleton becomes single-source.
+
+**(b) Adapter bootstrap responsibilities** — steps the adapter's thin `main.ts` performs
+*before* invoking the base message loop (adapter → base direction; no injection needed):
+
+1. Ensure host module resolution (Node: `import './lib/loader-hook'`; Deno: import-map config —
+   nothing to import).
+2. The `--subprocess` guard.
+3. Wire the injectors from (a).
+4. `prepareEnvironment()` — Deno patches `Socket.prototype._final`; Node no-op. **Hoisted to
+   bootstrap** (it is a process-global side effect; doing it once at startup is cleaner than
+   inside `construct`).
+5. `registerErrorListeners()`.
+6. Invoke the base message loop.
+
+This keeps each adapter's `main.ts` to a short, legible bootstrap and matches what the code
+already does today (`node-runtime/src/main.ts:132-134` already calls
+`Messenger.setTransport(stdoutTransport)` then `registerErrorListeners()`).
+
+### Module resolution is not an injectable capability
+
+Resolution does not fit the `setX()` model and the proposal does not pretend it does. It is
+**two distinct concerns**:
+
+1. **Host-resolution bootstrap** (adapter responsibility, not a base function with a signature):
+   each adapter guarantees that bare `@rocket.chat/apps[-engine]` specifiers resolve to compiled
+   output, by whatever mechanism its platform provides — Node's side-effecting `loader-hook`
+   import, Deno's import map. This is partly code (Node) and partly config (Deno).
+2. **Sandbox `require`** (a genuine injected capability — `setSandboxRequire` above): the
+   construct-time `require` handed to the app for its `node:`/`npm:`/`apps-engine` specifiers.
+
+### Package shape
 
 ```
 packages/apps/
-  base-runtime/        # the ~58 single-source files + RuntimePlatform interface + setPlatform()
-  deno-runtime/        # adapter: require.ts, parseArgs, EventTarget observer, Deno io + bootstrap
-  node-runtime/        # adapter: loader-hook, parseArgs, EventEmitter observer, node io + bootstrap
+  base-runtime/        # 52 shared files + the injector definitions; own runtime tsconfig
+  deno-runtime/        # adapter: require.ts, stdoutTransport, construct, error-handlers, main + deno config
+  node-runtime/        # adapter: loader-hook, stdoutTransport, construct, error-handlers, main + node config
 ```
 
-## Disposition Legend
+These are **directories under the single `@rocket.chat/apps` package**, not separate npm
+packages.
 
-- **BASE** — moves to base unchanged (only import-path/idiom normalization).
-- **BASE+require** — moves to base; the only coupling is `require()` → reads injected `platform.require`.
-- **BASE+platform** — moves to base; needs a non-require capability injected.
-- **SPLIT** — logic core moves to base; a thin slice stays in the adapter.
-- **ADAPTER** — platform-specific implementation, one copy per runtime.
+**Build & consumption (decision P1):**
 
-## Full Inventory
+- `base-runtime/` has its **own runtime-flavored tsconfig** — `module: nodenext`,
+  `moduleResolution: nodenext`, `target: es2023`, `types: ["node"]` — i.e. the settings
+  `node-runtime/tsconfig.json` uses today, because the base *is* that code. It compiles to
+  `base-runtime/dist`.
+- Both runtimes consume it as **compiled output** via the specifier
+  `@rocket.chat/apps/base-runtime/dist/...`:
+  - **Node**: resolved by the **existing** `loader-hook` branch (`@rocket.chat/apps/X` →
+    `path.join(appsPackageDir, X)`).
+  - **Deno**: resolved by the **existing** import-map entry `@rocket.chat/apps/` → `../`
+    plus `sloppy-imports` (the same way it already consumes `@rocket.chat/apps/dist/...` and
+    `apps-engine` — Deno reads compiled output, not TS source).
+  - **No new resolver branch and no new import-map entry** — the base rides the mechanism
+    seam-file #1 already provides. Because the specifier string is identical in both adapters
+    (cf. the existing shared `@rocket.chat/apps/dist/server/misc/UIHelper` import), there is no
+    idiom re-divergence.
+- Each runtime's `build`/`typecheck` pipeline gains one `tsc -p base-runtime/tsconfig.json`
+  step.
 
-### `lib/` core
+**Why a separate dir and not fold base into the main package `src/` (P2)?** Folding the base
+into `src/` (compiled by the package's main build) would force it under the **server** tsconfig,
+which is CommonJS / classic-node resolution — divergent from the runtime's `nodenext`/`es2023`.
+A background investigation of switching the main package to `nodenext` found it **moderate-to-high
+risk**: `@rocket.chat/tsconfig/server.json` sets `module: commonjs` / `moduleResolution: node`
+and **all 36 server-tier packages are uniformly CJS** (no nodenext precedent); `@rocket.chat/apps`
+ships CJS with **no `exports` map**, and consumers (`apps/meteor`, `"type": "commonjs"`) import
+~50+ **extensionless** deep `dist/...` paths relying on classic resolution; flipping to nodenext
+would require adding `.js` extensions to **~590 relative imports across 219 files** and risk
+type-resolution breakage in every deep-path consumer. P2 is therefore recorded as a **possible
+future consolidation, gated on a deliberate, coordinated nodenext migration** — not part of this
+proposal.
 
-| File | Disposition | Injected capability / notes |
-|---|---|---|
-| `lib/codec.ts` | BASE+require | `require('.../App.js')` to load `App` class |
-| `lib/secureFields.ts` | BASE | identical |
-| `lib/sanitizeDeprecatedUsage.ts` | BASE | — |
-| `lib/requestContext.ts` | BASE | — |
-| `lib/room.ts` | BASE | only `??` / strictness idiom |
-| `lib/roomFactory.ts` | BASE | — |
-| `lib/wrapAppForRequest.ts` | BASE | — |
-| `lib/logger.ts` | BASE | use Node's `implements ILogger` superset as canonical |
-| `lib/messenger.ts` | SPLIT | `writeStdout` + `createResponseObserver` injected; Queue/encode logic is base |
-| `lib/metricsCollector.ts` | BASE+platform | `writeStderr`, `pid` |
-| `lib/parseArgs.ts` | ADAPTER | shape differs (`@std/cli` vs `node:util`); exposed via `platform.parseArgs` |
-| `lib/require.ts` | ADAPTER (deno) | becomes the Deno `require` impl |
-| `lib/loader-hook.ts` | ADAPTER (node) | Node `registerHooks` resolver |
+### Test strategy (decision K)
 
-### `lib/ast/`
+Tests are per-runtime today, on different harnesses: Node uses `node:test`; Deno uses
+`deno.land/std@0.203.0` + `deno test --no-check` (21 suites / 163 steps). They are not shared.
 
-| File | Disposition | Notes |
-|---|---|---|
-| `lib/ast/mod.ts` | BASE | drop `@deno-types` comments; use real acorn imports |
-| `lib/ast/operations.ts` | BASE | type-assertion idiom only |
-| `acorn.d.ts`, `acorn-walk.d.ts` | BASE | dedupe the two copies (deno root vs node `lib/ast/`) into one |
+- **Base-logic suites live in `base-runtime/` and run under `node:test`.** Node is canonical,
+  `node:test` typechecks cleanly, and post-extraction this logic is single-source and
+  platform-agnostic — so it is validated once, with types. This is the bulk of the suites.
+- **Each adapter keeps a thin platform suite** under its native harness: Deno's `deno test`
+  over the Deno seam (transport via `@std/io`, the `Socket._final` patch, error-handler
+  registration), Node's `node:test` over the Node seam.
+- **Do not** re-run the base suite under `deno test`: it would add a `--no-check` execution
+  path with no type safety, duplicating coverage the canonical Node run already provides.
 
-### `lib/accessors/`
+This is *not* unification — unifying is blocked by the harness asymmetry and by `deno check`
+being broken (below), and there is little value in a cross-runtime test abstraction for logic
+that is now single-source.
 
-| File | Disposition | Notes |
-|---|---|---|
-| `accessors/mod.ts` | BASE | 48-line "diff" was whitespace + `WithProxy` typing |
-| `accessors/http.ts` | BASE | identical after norm |
-| `accessors/formatResponseErrorHandler.ts` | BASE | byte-identical today |
-| `accessors/notifier.ts` | BASE+require | — |
-| `accessors/builders/BlockBuilder.ts` | BASE+require | loads BlockType/ElementType/TextObjectType |
-| `accessors/builders/DiscussionBuilder.ts` | BASE+require | — |
-| `accessors/builders/LivechatMessageBuilder.ts` | BASE+require | — |
-| `accessors/builders/MessageBuilder.ts` | BASE+require | — |
-| `accessors/builders/RoomBuilder.ts` | BASE+require | — |
-| `accessors/builders/UserBuilder.ts` | BASE+require | — |
-| `accessors/builders/VideoConferenceBuilder.ts` | BASE+require | — |
-| `accessors/extenders/HttpExtender.ts` | BASE | byte-identical today |
-| `accessors/extenders/MessageExtender.ts` | BASE+require | — |
-| `accessors/extenders/RoomExtender.ts` | BASE+require | — |
-| `accessors/extenders/VideoConferenceExtend.ts` | BASE+require | — |
-| `accessors/modify/ModifyCreator.ts` | BASE+require | — |
-| `accessors/modify/ModifyExtender.ts` | BASE+require | — |
-| `accessors/modify/ModifyUpdater.ts` | BASE+require | — |
+**Known coverage boundary:** the Deno *base* is exercised only transitively (the base is
+identical bytes for both); only the Deno *seam* is covered by `deno test`. State this
+explicitly. Fixing `deno check`'s apps-engine resolution would let a Deno seam suite typecheck
+too.
 
-### `handlers/`
+## Environment facts the design accounts for
 
-| File | Disposition | Notes |
-|---|---|---|
-| `handlers/api-handler.ts` | BASE | lint-directive idiom only |
-| `handlers/outboundcomms-handler.ts` | BASE | — |
-| `handlers/scheduler-handler.ts` | BASE | — |
-| `handlers/slashcommand-handler.ts` | BASE | type-assertion idiom only |
-| `handlers/videoconference-handler.ts` | BASE | — |
-| `handlers/uikit/handler.ts` | BASE+require | — |
-| `handlers/listener/handler.ts` | BASE+require | — |
-| `handlers/lib/assertions.ts` | BASE | — |
-| `handlers/app/handler.ts` | BASE | dispatch table |
-| `handlers/app/handleInitialize.ts` | BASE | — |
-| `handlers/app/handleGetStatus.ts` | BASE | — |
-| `handlers/app/handleSetStatus.ts` | BASE+require | — |
-| `handlers/app/handleOnEnable.ts` | BASE | — |
-| `handlers/app/handleOnDisable.ts` | BASE | — |
-| `handlers/app/handleOnInstall.ts` | BASE | — |
-| `handlers/app/handleOnUninstall.ts` | BASE | — |
-| `handlers/app/handleOnUpdate.ts` | BASE | — |
-| `handlers/app/handleOnPreSettingUpdate.ts` | BASE | — |
-| `handlers/app/handleOnSettingUpdated.ts` | BASE | — |
-| `handlers/app/handleUploadEvents.ts` | BASE+platform | `readFile(path)` |
-| `handlers/app/construct.ts` | SPLIT | `require`, `prepareEnvironment`, `buildRequire` specifier policy injected; sandbox-eval logic is base |
+- **`deno check` is globally broken for deno-runtime**: any file importing
+  `@rocket.chat/apps-engine` fails on the built `.d.ts` (`Failed resolving types. Relative
+  import path "." not prefixed…`). Deno is gated **only** by `deno task test` (`--no-check`).
+  Typecheck parity is unenforceable on the Deno side until apps-engine type resolution is fixed.
+- **Node typecheck**: from `packages/apps/`, `yarn run typecheck:node-runtime` =
+  `tsc -p node-runtime/tsconfig.json --noEmit`. `node-runtime` has no `package.json`; it builds
+  as part of `@rocket.chat/apps` (`build:node-runtime` → `node-runtime/dist`).
+- **Config**: `deno.runtime.jsonc` is **gitignored** (generated, absolute paths); the tracked
+  config is `deno.jsonc` (`sloppy-imports` + `detect-cjs` enabled; import map
+  `@rocket.chat/apps-engine/` → compiled engine, `@rocket.chat/apps/` → `../`; fmt: tabs,
+  indentWidth 4, lineWidth 160, singleQuote). The base's lint/format/tsconfig become the single
+  source the ~30 idiom diffs converge under.
 
-### Top-level / entry / config
+## Out of scope
 
-| File | Disposition | Notes |
-|---|---|---|
-| `AppObjectRegistry.ts` | BASE | IIFE-paren idiom only |
-| `error-handlers.ts` | SPLIT | notification-shape builder is base; `registerErrorHandlers` hook is adapter |
-| `main.ts` | SPLIT | message loop is base; `readStdin` / `argv` / `exit` / observer-dispatch injected |
-| `globals.d.ts` (node) | ADAPTER (node) | ambient types |
-| `deno.jsonc`, `deno.runtime.jsonc`, `deno.lock`, `.gitignore` | ADAPTER (deno) | + import map for adapter wiring |
-| `tsconfig.json` (node) | ADAPTER (node) | — |
-
-## Tally
-
-- **BASE (pure)**: 33 files
-- **BASE+require**: 19 files
-- **BASE+platform**: 2 files (`metricsCollector`, `handleUploadEvents`)
-- **SPLIT**: 4 files (`main`, `messenger`, `construct`, `error-handlers`)
-- **ADAPTER**: `require.ts` / `loader-hook.ts`, `parseArgs.ts`, `globals.d.ts`, config
-
-→ **~58 of 62 logic files become single-source.** Only 4 files split, and the per-runtime
-adapter is roughly ~250 lines total.
-
-## Out of Scope (this proposal)
-
-- Step-by-step migration ordering and the strategy for keeping both runtimes green during
-  the move (to be covered in a follow-up implementation plan).
-- Test consolidation: both trees carry parallel `tests/` suites that would also collapse to
-  a single base suite running against each adapter.
+- **Migration ordering / history rewrite** — handled separately.
+- **The nodenext migration of the main package** that would enable P2 — a future, coordinated
+  multi-package effort.
