@@ -1,5 +1,4 @@
-// @deno-types="../../../../acorn.d.ts"
-import { AnyNode, ClassDeclaration, ExpressionStatement, FunctionDeclaration, VariableDeclaration } from 'acorn';
+import type { AnyNode, ClassDeclaration, ExpressionStatement, FunctionDeclaration, VariableDeclaration } from 'acorn';
 
 /**
  * Partial AST blocks to support testing.
@@ -8,8 +7,11 @@ import { AnyNode, ClassDeclaration, ExpressionStatement, FunctionDeclaration, Va
 
 type TestNodeExcerpt<N extends AnyNode = AnyNode> = {
 	code: string;
+	// start/end are omitted from test fixtures for brevity; cast to any to allow partial node objects
 	node: N;
 };
+
+const startEnd = { start: 0, end: 0 };
 
 export const FunctionDeclarationFoo: TestNodeExcerpt<FunctionDeclaration> = {
 	code: 'function foo() {}',
@@ -18,6 +20,7 @@ export const FunctionDeclarationFoo: TestNodeExcerpt<FunctionDeclaration> = {
 		id: {
 			type: 'Identifier',
 			name: 'foo',
+			...startEnd,
 		},
 		expression: false,
 		generator: false,
@@ -26,7 +29,9 @@ export const FunctionDeclarationFoo: TestNodeExcerpt<FunctionDeclaration> = {
 		body: {
 			type: 'BlockStatement',
 			body: [],
+			...startEnd,
 		},
+		...startEnd,
 	},
 };
 
@@ -41,6 +46,7 @@ export const ConstFooAssignedFunctionExpression: TestNodeExcerpt<VariableDeclara
 				id: {
 					type: 'Identifier',
 					name: 'foo',
+					...startEnd,
 				},
 				init: {
 					type: 'FunctionExpression',
@@ -52,10 +58,14 @@ export const ConstFooAssignedFunctionExpression: TestNodeExcerpt<VariableDeclara
 					body: {
 						type: 'BlockStatement',
 						body: [],
+						...startEnd,
 					},
+					...startEnd,
 				},
+				...startEnd,
 			},
 		],
+		...startEnd,
 	},
 };
 
@@ -69,6 +79,7 @@ export const AssignmentExpressionOfArrowFunctionToFooIdentifier: TestNodeExcerpt
 			left: {
 				type: 'Identifier',
 				name: 'foo',
+				...startEnd,
 			},
 			right: {
 				type: 'ArrowFunctionExpression',
@@ -80,9 +91,13 @@ export const AssignmentExpressionOfArrowFunctionToFooIdentifier: TestNodeExcerpt
 				body: {
 					type: 'BlockStatement',
 					body: [],
+					...startEnd,
 				},
+				...startEnd,
 			},
+			...startEnd,
 		},
+		...startEnd,
 	},
 };
 
@@ -98,13 +113,16 @@ export const AssignmentExpressionOfNamedFunctionToFooMemberExpression: TestNodeE
 				object: {
 					type: 'Identifier',
 					name: 'a',
+					...startEnd,
 				},
 				property: {
 					type: 'Identifier',
 					name: 'foo',
+					...startEnd,
 				},
 				computed: false,
 				optional: false,
+				...startEnd,
 			},
 			right: {
 				type: 'FunctionExpression',
@@ -116,9 +134,13 @@ export const AssignmentExpressionOfNamedFunctionToFooMemberExpression: TestNodeE
 				body: {
 					type: 'BlockStatement',
 					body: [],
+					...startEnd,
 				},
+				...startEnd,
 			},
+			...startEnd,
 		},
+		...startEnd,
 	},
 };
 
@@ -129,6 +151,7 @@ export const MethodDefinitionOfFooInClassBar: TestNodeExcerpt<ClassDeclaration> 
 		id: {
 			type: 'Identifier',
 			name: 'Bar',
+			...startEnd,
 		},
 		superClass: null,
 		body: {
@@ -139,6 +162,7 @@ export const MethodDefinitionOfFooInClassBar: TestNodeExcerpt<ClassDeclaration> 
 					key: {
 						type: 'Identifier',
 						name: 'foo',
+						...startEnd,
 					},
 					value: {
 						type: 'FunctionExpression',
@@ -150,14 +174,19 @@ export const MethodDefinitionOfFooInClassBar: TestNodeExcerpt<ClassDeclaration> 
 						body: {
 							type: 'BlockStatement',
 							body: [],
+							...startEnd,
 						},
+						...startEnd,
 					},
 					kind: 'method',
 					computed: false,
 					static: false,
+					...startEnd,
 				},
 			],
+			...startEnd,
 		},
+		...startEnd,
 	},
 };
 
@@ -170,10 +199,13 @@ export const SimpleCallExpressionOfFoo: TestNodeExcerpt<ExpressionStatement> = {
 			callee: {
 				type: 'Identifier',
 				name: 'foo',
+				...startEnd,
 			},
 			arguments: [],
 			optional: false,
+			...startEnd,
 		},
+		...startEnd,
 	},
 };
 
@@ -187,6 +219,7 @@ export const SyncFunctionDeclarationWithAsyncCallExpression: TestNodeExcerpt<Fun
 		id: {
 			type: 'Identifier',
 			name: 'foo',
+			...startEnd,
 		},
 		expression: false,
 		generator: false,
@@ -211,15 +244,22 @@ export const SyncFunctionDeclarationWithAsyncCallExpression: TestNodeExcerpt<Fun
 								callee: {
 									type: 'Identifier',
 									name: 'bar',
+									...startEnd,
 								},
 								arguments: [],
 								optional: false,
+								...startEnd,
 							},
+							...startEnd,
 						},
+						...startEnd,
 					},
+					...startEnd,
 				},
 			],
+			...startEnd,
 		},
+		...startEnd,
 	},
 };
 
@@ -233,12 +273,16 @@ export const AssignmentOfFooToBar: TestNodeExcerpt<ExpressionStatement> = {
 			left: {
 				type: 'Identifier',
 				name: 'bar',
+				...startEnd,
 			},
 			right: {
 				type: 'Identifier',
 				name: 'foo',
+				...startEnd,
 			},
+			...startEnd,
 		},
+		...startEnd,
 	},
 };
 
@@ -256,17 +300,23 @@ export const AssignmentOfFooToBarMemberExpression: TestNodeExcerpt<ExpressionSta
 				object: {
 					type: 'Identifier',
 					name: 'obj',
+					...startEnd,
 				},
 				property: {
 					type: 'Identifier',
 					name: 'bar',
+					...startEnd,
 				},
+				...startEnd,
 			},
 			right: {
 				type: 'Identifier',
 				name: 'foo',
+				...startEnd,
 			},
+			...startEnd,
 		},
+		...startEnd,
 	},
 };
 
@@ -281,13 +331,17 @@ export const AssignmentOfFooToBarVariableDeclarator: TestNodeExcerpt<VariableDec
 				id: {
 					type: 'Identifier',
 					name: 'bar',
+					...startEnd,
 				},
 				init: {
 					type: 'Identifier',
 					name: 'foo',
+					...startEnd,
 				},
+				...startEnd,
 			},
 		],
+		...startEnd,
 	},
 };
 
@@ -298,6 +352,7 @@ export const AssignmentOfFooToBarPropertyDefinition: TestNodeExcerpt<ClassDeclar
 		id: {
 			type: 'Identifier',
 			name: 'baz',
+			...startEnd,
 		},
 		superClass: null,
 		body: {
@@ -310,14 +365,19 @@ export const AssignmentOfFooToBarPropertyDefinition: TestNodeExcerpt<ClassDeclar
 					key: {
 						type: 'Identifier',
 						name: 'bar',
+						...startEnd,
 					},
 					value: {
 						type: 'Identifier',
 						name: 'foo',
+						...startEnd,
 					},
+					...startEnd,
 				},
 			],
+			...startEnd,
 		},
+		...startEnd,
 	},
 };
 
@@ -335,6 +395,7 @@ export const FixSimpleCallExpression: TestNodeExcerpt<FunctionDeclaration> = {
 		id: {
 			type: 'Identifier',
 			name: 'bar',
+			...startEnd,
 		},
 		expression: false,
 		generator: false,
@@ -352,28 +413,37 @@ export const FixSimpleCallExpression: TestNodeExcerpt<FunctionDeclaration> = {
 							id: {
 								type: 'Identifier',
 								name: 'a',
+								...startEnd,
 							},
 							init: {
 								type: 'CallExpression',
 								callee: {
 									type: 'Identifier',
 									name: 'foo',
+									...startEnd,
 								},
 								arguments: [],
 								optional: false,
+								...startEnd,
 							},
+							...startEnd,
 						},
 					],
+					...startEnd,
 				},
 				{
 					type: 'ReturnStatement',
 					argument: {
 						type: 'Identifier',
 						name: 'a',
+						...startEnd,
 					},
+					...startEnd,
 				},
 			],
+			...startEnd,
 		},
+		...startEnd,
 	},
 };
 
@@ -394,6 +464,7 @@ export const ArrowFunctionDerefCallExpression: TestNodeExcerpt<VariableDeclarati
 				id: {
 					type: 'Identifier',
 					name: 'bar',
+					...startEnd,
 				},
 				init: {
 					type: 'ArrowFunctionExpression',
@@ -412,25 +483,34 @@ export const ArrowFunctionDerefCallExpression: TestNodeExcerpt<VariableDeclarati
 								{
 									type: 'Literal',
 									value: 0,
+									...startEnd,
 								},
 								{
 									type: 'MemberExpression',
 									object: {
 										type: 'Identifier',
 										name: 'e',
+										...startEnd,
 									},
 									property: {
 										type: 'Identifier',
 										name: 'foo',
+										...startEnd,
 									},
 									computed: false,
 									optional: false,
+									...startEnd,
 								},
 							],
+							...startEnd,
 						},
+						...startEnd,
 					},
+					...startEnd,
 				},
+				...startEnd,
 			},
 		],
+		...startEnd,
 	},
 };
