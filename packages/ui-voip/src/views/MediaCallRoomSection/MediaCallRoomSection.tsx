@@ -73,6 +73,7 @@ const MediaCallRoomSection = ({ showChat, onToggleChat, user, containerHeight }:
 
 	const screenShareAvailable = features.includes('screen-share');
 	const holdAvailable = features.includes('hold');
+	const transferAvailable = features.includes('transfer');
 
 	if (!peerInfo || !('userId' in peerInfo) || !peerInfo.userId) {
 		return null;
@@ -132,7 +133,9 @@ const MediaCallRoomSection = ({ showChat, onToggleChat, user, containerHeight }:
 					/>
 				)}
 
-				<ActionButton disabled={connecting || reconnecting} label={t('Forward')} icon='arrow-forward' onClick={onForward} />
+				{transferAvailable && (
+					<ActionButton disabled={connecting || reconnecting} label={t('Forward')} icon='arrow-forward' onClick={onForward} />
+				)}
 				<ActionButton label={t('Voice_call__user__hangup', { user: peerInfo.displayName })} icon='phone-off' danger onClick={onEndCall} />
 			</ActionStrip>
 		</Box>
