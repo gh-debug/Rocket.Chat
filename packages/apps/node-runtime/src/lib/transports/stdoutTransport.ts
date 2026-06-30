@@ -1,4 +1,4 @@
-import type { Transport } from '../messenger';
+import type { Transport } from '@rocket.chat/apps/base-runtime/dist/lib/messenger';
 
 /**
  * Transport that writes messages to the process' standard output.

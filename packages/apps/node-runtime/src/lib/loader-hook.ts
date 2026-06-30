@@ -9,11 +9,9 @@ const PACKAGE_PREFIX = '@rocket.chat/apps';
 
 registerHooks({
 	resolve(specifier, context, nextResolve) {
-		// console.log({ specifier });
 		if (specifier === PACKAGE_PREFIX || specifier.startsWith(`${PACKAGE_PREFIX}/`)) {
 			const subpath = specifier.slice(PACKAGE_PREFIX.length).replace(/^\//, '');
 			const localPath = subpath ? path.join(appsPackageDir, subpath) : appsPackageDir;
-			console.error({ specifier, localPath });
 			return nextResolve(localPath, context);
 		}
 		return nextResolve(specifier, context);
