@@ -5,7 +5,6 @@ import { AppObjectRegistry } from '../../AppObjectRegistry';
 import { createMockRequest } from '../../handlers/tests/helpers/mod';
 import * as Messenger from '../messenger';
 import type { RequestContext } from '../requestContext';
-import { stdoutTransport } from '../transports/stdoutTransport';
 
 describe('Messenger', () => {
 	let context: RequestContext;
@@ -20,7 +19,7 @@ describe('Messenger', () => {
 
 	after(() => {
 		AppObjectRegistry.clear();
-		Messenger.setTransport(stdoutTransport);
+		Messenger.setTransport(Messenger.noopTransport);
 	});
 
 	it('should add logs to success responses', async () => {

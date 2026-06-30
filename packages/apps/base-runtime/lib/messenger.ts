@@ -32,7 +32,7 @@ const COMMAND_PONG = '_zPONG';
 
 export const RPCResponseObserver = new EventEmitter();
 
-export const Queue = new (class Queue {
+class MessageQueue {
 	private queue: Uint8Array[] = [];
 
 	private isProcessing = false;
@@ -63,7 +63,9 @@ export const Queue = new (class Queue {
 	public getCurrentSize() {
 		return this.queue.length;
 	}
-})();
+}
+
+export const Queue = new MessageQueue();
 
 /**
  * A platform-dependent component responsible for delivering encoded messages to
