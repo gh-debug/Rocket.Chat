@@ -194,17 +194,24 @@ packages.
   `moduleResolution: nodenext`, `target: es2023`, `types: ["node"]` — i.e. the settings
   `node-runtime/tsconfig.json` uses today, because the base *is* that code. It compiles to
   `base-runtime/dist`.
-- Both runtimes consume it as **compiled output** via the specifier
-  `@rocket.chat/apps/base-runtime/dist/...`:
-  - **Node**: resolved by the **existing** `loader-hook` branch (`@rocket.chat/apps/X` →
-    `path.join(appsPackageDir, X)`).
-  - **Deno**: resolved by the **existing** import-map entry `@rocket.chat/apps/` → `../`
-    plus `sloppy-imports` (the same way it already consumes `@rocket.chat/apps/dist/...` and
-    `apps-engine` — Deno reads compiled output, not TS source).
+- The two adapters consume the base through **different specifiers**, because the runtimes
+  resolve modules differently. This divergence lives only inside the per-runtime seam files
+  (`main`/`error-handlers`/`stdoutTransport`), so it costs nothing in shared code:
+  - **Node** consumes the **compiled output** `@rocket.chat/apps/base-runtime/dist/...`,
+    resolved by the **existing** `loader-hook` branch (`@rocket.chat/apps/X` →
+    `path.join(appsPackageDir, X)`). The base emits CommonJS (the package has no
+    `"type": "module"`) and Node `require()`s it.
+  - **Deno** consumes the **TypeScript source** `@rocket.chat/apps/base-runtime/...`,
+    resolved by the **existing** import-map entry `@rocket.chat/apps/` → `../` plus
+    `sloppy-imports` (the same way it already resolves `@rocket.chat/apps/dist/...` and
+    `apps-engine`). This is mandatory, not a preference: under `detect-cjs` the compiled base
+    runs as CommonJS, and **Deno's CJS `require()` bypasses the import map**, falling back to
+    `node_modules` resolution — which escapes the subprocess `--allow-read` allowlist (e.g. the
+    hoisted `packages/node_modules` symlink) and ignores the map's npm pinning. Running the base
+    as source keeps every bare/`@rocket.chat/apps` specifier on the ESM path, where the import
+    map applies. This is exactly how Deno ran its own `.ts` copies before this extraction.
   - **No new resolver branch and no new import-map entry** — the base rides the mechanism
-    seam-file #1 already provides. Because the specifier string is identical in both adapters
-    (cf. the existing shared `@rocket.chat/apps/dist/server/misc/UIHelper` import), there is no
-    idiom re-divergence.
+    seam-file #1 already provides.
 - Each runtime's `build`/`typecheck` pipeline gains one `tsc -p base-runtime/tsconfig.json`
   step.
 
