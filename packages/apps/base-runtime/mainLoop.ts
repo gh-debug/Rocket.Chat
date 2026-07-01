@@ -92,7 +92,7 @@ function handleResponse(response: Messenger.JsonRpcResponse): void {
  * this loop. It reads messages from `process.stdin` (a `node:` API available on
  * every supported platform) and dispatches them to the shared handlers.
  */
-export async function startMessageLoop(): Promise<void> {
+export async function startMainLoop(): Promise<void> {
 	Messenger.sendNotification({ method: 'ready', params: [] });
 
 	for await (const message of decoder.decodeStream(process.stdin)) {

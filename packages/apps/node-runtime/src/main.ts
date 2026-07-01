@@ -2,7 +2,7 @@ import './lib/loader-hook';
 
 import { setSandboxGlobals, setSandboxRequire } from '@rocket.chat/apps/base-runtime/dist/handlers/app/construct';
 import * as Messenger from '@rocket.chat/apps/base-runtime/dist/lib/messenger';
-import { startMessageLoop } from '@rocket.chat/apps/base-runtime/dist/messageLoop';
+import { startMainLoop } from '@rocket.chat/apps/base-runtime/dist/mainLoop';
 
 import registerErrorListeners from './error-handlers';
 import { stdoutTransport } from './lib/transports/stdoutTransport';
@@ -27,4 +27,4 @@ setSandboxGlobals({});
 
 registerErrorListeners();
 
-void startMessageLoop();
+void startMainLoop();

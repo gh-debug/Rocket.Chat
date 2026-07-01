@@ -9,7 +9,7 @@ import process from 'node:process';
 // map and falls back to node_modules — outside the subprocess read allowlist.
 import { setSandboxGlobals, setSandboxRequire } from '@rocket.chat/apps/base-runtime/handlers/app/construct';
 import * as Messenger from '@rocket.chat/apps/base-runtime/lib/messenger';
-import { startMessageLoop } from '@rocket.chat/apps/base-runtime/messageLoop';
+import { startMainLoop } from '@rocket.chat/apps/base-runtime/mainLoop';
 
 import registerErrorListeners from './error-handlers';
 import { require as sandboxRequire } from './lib/require';
@@ -50,4 +50,4 @@ prepareEnvironment();
 
 registerErrorListeners();
 
-startMessageLoop();
+startMainLoop();
