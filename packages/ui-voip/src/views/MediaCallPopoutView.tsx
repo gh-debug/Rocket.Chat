@@ -68,8 +68,12 @@ const MediaCallPopoutView = ({ user, onClickClosePopout, onClickFullscreen, full
 			flexDirection='column'
 			ref={ref}
 		>
-			{showAppActions && <ActionStrip leftSlot={<AppActions actions={appActions} />} />}
-			{showHeaderActions ? <ActionStrip rightSlot={<VideoCallButton onClick={onRequestVideoCall} />} /> : null}
+			{(showAppActions || showHeaderActions) && (
+				<ActionStrip
+					leftSlot={showAppActions ? <AppActions actions={appActions} /> : undefined}
+					rightSlot={showHeaderActions ? <VideoCallButton onClick={onRequestVideoCall} /> : undefined}
+				/>
+			)}
 			{escalationAvailable && escalated ? <EscalatedCallPrompt /> : <MediaCallCardList user={user} shouldWrapCards={shouldWrapCards} />}
 			<ActionStrip
 				leftSlot={

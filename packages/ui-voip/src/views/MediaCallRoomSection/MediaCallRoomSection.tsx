@@ -117,8 +117,12 @@ const MediaCallRoomSection = ({ showChat, onToggleChat, user, containerHeight }:
 			aria-label={t('Voice_call')}
 			{...getSplitStyles(showChat)}
 		>
-			{showAppActions && <ActionStrip leftSlot={<AppActions actions={appActions} />} />}
-			{showHeaderActions ? <ActionStrip rightSlot={<VideoCallButton onClick={onRequestVideoCall} />} /> : null}
+			{(showAppActions || showHeaderActions) && (
+				<ActionStrip
+					leftSlot={showAppActions ? <AppActions actions={appActions} /> : undefined}
+					rightSlot={showHeaderActions ? <VideoCallButton onClick={onRequestVideoCall} /> : undefined}
+				/>
+			)}
 
 			{content}
 
