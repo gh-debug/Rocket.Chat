@@ -39,8 +39,12 @@ function getEmojiRegex(): RegExp {
 		// Sort emojis by length (longest first) to match multi-codepoint emojis correctly
 		const unicodeEmojis = [...unicodeMap.keys()].sort((a, b) => b.length - a.length);
 		const unicodePattern = unicodeEmojis.map((e) => e.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-		// Combine shortcode and unicode emoji patterns
-		emojiRegex = new RegExp(`(:([a-zA-Z0-9_+-]+):)|(${unicodePattern})`, 'g');
+		// Skip content already wrapped in HTML (e.g. custom emoji spans) so a shortcode that also
+		// matches a custom emoji alias is not rendered twice; then match shortcodes and unicode emoji.
+		emojiRegex = new RegExp(
+			`<object[^>]*>.*?</object>|<span[^>]*>.*?</span>|<(?:object|embed|svg|img|div|span|p|a)[^>]*>|(:([a-zA-Z0-9_+-]+):)|(${unicodePattern})`,
+			'g',
+		);
 	}
 	return emojiRegex;
 }
