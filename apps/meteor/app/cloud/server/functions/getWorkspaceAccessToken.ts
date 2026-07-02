@@ -4,6 +4,7 @@ import { WorkspaceCredentials } from '@rocket.chat/models';
 import { SystemLogger } from '../../../../server/lib/logger/system';
 import { workspaceScopes } from '../oauthScopes';
 import { getWorkspaceAccessTokenWithScope } from './getWorkspaceAccessTokenWithScope';
+import { hasOfflineLicense } from './offlineLicense';
 import { retrieveRegistrationStatus } from './retrieveRegistrationStatus';
 
 const hasWorkspaceAccessTokenExpired = (credentials: IWorkspaceCredentials): boolean => new Date() >= credentials.expirationDate;
@@ -23,6 +24,10 @@ export async function getWorkspaceAccessToken(forceNew = false, scope = '', save
 	const { workspaceRegistered } = await retrieveRegistrationStatus();
 
 	if (!workspaceRegistered) {
+		return '';
+	}
+
+	if (hasOfflineLicense()) {
 		return '';
 	}
 

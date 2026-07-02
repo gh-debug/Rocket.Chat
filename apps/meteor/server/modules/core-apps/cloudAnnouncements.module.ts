@@ -12,6 +12,7 @@ import { isTruthy } from '@rocket.chat/tools';
 import type * as UiKit from '@rocket.chat/ui-kit';
 
 import { getWorkspaceAccessToken } from '../../../app/cloud/server';
+import { assertNotOfflineLicense } from '../../../app/cloud/server/functions/offlineLicense';
 import { syncWorkspace } from '../../../app/cloud/server/functions/syncWorkspace';
 import { settings } from '../../../app/settings/server';
 import { CloudWorkspaceConnectionError } from '../../../lib/errors/CloudWorkspaceConnectionError';
@@ -255,6 +256,8 @@ export class CloudAnnouncementsModule implements IUiKitCoreApp {
 		interactant: CloudAnnouncementInteractant,
 		userInteraction: UiKit.UserInteraction,
 	): Promise<UiKit.ServerInteraction> {
+		assertNotOfflineLicense();
+
 		const token = await this.getWorkspaceAccessToken();
 
 		const request: CloudAnnouncementInteractionRequest = {

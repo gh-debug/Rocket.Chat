@@ -6,8 +6,11 @@ import { notifyOnSettingChangedById } from '../../../lib/server/lib/notifyListen
 import { settings } from '../../../settings/server';
 import { userScopes } from '../oauthScopes';
 import { getRedirectUri } from './getRedirectUri';
+import { assertNotOfflineLicense } from './offlineLicense';
 
 export async function getOAuthAuthorizationUrl() {
+	assertNotOfflineLicense();
+
 	const state = Random.id();
 
 	await updateAuditedBySystem({

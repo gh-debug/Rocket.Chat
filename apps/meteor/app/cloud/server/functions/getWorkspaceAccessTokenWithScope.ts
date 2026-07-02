@@ -5,6 +5,7 @@ import { settings } from '../../../settings/server';
 import { workspaceScopes } from '../oauthScopes';
 import { getRedirectUri } from './getRedirectUri';
 import { CloudWorkspaceAccessTokenError } from './getWorkspaceAccessToken';
+import { hasOfflineLicense } from './offlineLicense';
 import { removeWorkspaceRegistrationInfo } from './removeWorkspaceRegistrationInfo';
 import { retrieveRegistrationStatus } from './retrieveRegistrationStatus';
 
@@ -28,6 +29,10 @@ export async function getWorkspaceAccessTokenWithScope({
 	const tokenResponse = { token: '', expiresAt: new Date(), scope: '' };
 
 	if (!workspaceRegistered) {
+		return tokenResponse;
+	}
+
+	if (hasOfflineLicense()) {
 		return tokenResponse;
 	}
 
